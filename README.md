@@ -118,6 +118,7 @@ Tables: `incidents`, `hospitals`, `ambulances`, `patrols`, `alerts`.
 
 #### 7.1 System Architecture Diagram
 
+```mermaid
 graph TD
     subgraph "External Nodes"
         Citizen["Citizen (Public SOS)"]
@@ -136,7 +137,10 @@ graph TD
     API -- "CRUD" --> DB
     DB -- "Change Data" --> API
     API -- "Push Event" --> Socket
-    Socket -- "Broadcast" --> External Nodes
+    Socket -- "Broadcast" --> Citizen
+    Socket -- "Broadcast" --> Patrol
+    Socket -- "Broadcast" --> Ambulance
+    Socket -- "Broadcast" --> Hospital
     
     Ambulance -- "GPS Socket" --> Socket
     Patrol -- "GPS Socket" --> Socket
@@ -177,12 +181,68 @@ Synchronization is achieved via a dedicated WebSocket layer (Socket.io/FastAPI W
 *   **GPS Inaccuracy:** If GPS data is stale (> 30s), the last known position is marked with a "Warning" icon on the map.
 *   **Resource Exhaustion:** If no units are 'AVAILABLE', the incident is queued as 'PENDING' and auto-assigned as soon as a unit resolves a previous case.
 
+#### 7.7 Operational Workflow Flowchart
+The following diagram summarizes the end-to-end response lifecycle:
+
+```mermaid
+flowchart TD
+    Start([Citizen SOS Trigger]) --> Report[Report Incident to API]
+    Report --> Dispatch{Backend: Find nearest Resources?}
+    Dispatch -- Yes --> Assign[Assign Patrol & Ambulance]
+    Dispatch -- No --> Queue[Add to Pending Queue]
+    Queue --> Dispatch
+    
+    Assign --> Response[Responders Mobilize]
+    Response --> OnScene[Security & Triage on Scene]
+    OnScene --> Transport{Transport Required?}
+    
+    Transport -- Yes --> Hospital[Suggest Nearest Hospital w/ Beds]
+    Hospital --> Alert[Send Field Alert to Hospital]
+    Alert --> Admit[Hospital Admits Patient]
+    Admit --> Resolve
+    
+    Transport -- No --> Resolve([Mark Incident RESOLVED])
+    Resolve --> Available[Units reset to AVAILABLE]
+```
+
 ---
 
 ### 8. Classical UML Diagrams
 
 #### 8.1 Use Case Diagram
-(Common to system logic, remained largely unchanged from v1.0).
+```mermaid
+graph LR
+    Citizen((Citizen))
+    Patrol((Patrol Unit))
+    Ambulance((Ambulance Unit))
+    Hospital((Hospital Staff))
+    Admin((Administrator))
+
+    subgraph "HERMS System"
+        UC1(Report SOS)
+        UC2(Track Incident)
+        UC3(Update Status)
+        UC4(Receive Alert)
+        UC5(Update Beds)
+        UC6(Admit Case)
+        UC7(Monitor All)
+    end
+
+    Citizen --> UC1
+    Citizen --> UC2
+    
+    Patrol --> UC3
+    Patrol --> UC4
+    
+    Ambulance --> UC3
+    Ambulance --> UC4
+    
+    Hospital --> UC5
+    Hospital --> UC6
+    
+    Admin --> UC7
+    Admin --> UC6
+```
 
 #### 8.2 Sequence Diagram: Response Flow
 
