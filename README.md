@@ -143,12 +143,40 @@ graph TD
     Patrol -- "GPS Socket" --> Socket
 ```
 
-#### 7.2 Working Workflow
-1.  **SOS:** Citizen reports incident via POST request to Python API.
-2.  **Broadcast:** API saves to DB and triggers Socket.io broadcast to responders.
-3.  **Dispatch:** Python backend logic identifies nearest units; updates DB.
-4.  **Tracking:** Units push location logs via Websockets; broadcasted to all viewers.
-5.  **Resolution:** Final status updates handled via API endpoints; DB persistent storage updated.
+#### 7.2 Core Operational Workflow
+The system follows a reactive lifecycle triggered by external events:
+1.  **Ingestion:** Citizen SOS -> API POST -> DB Persistence.
+2.  **Dispatching:** Backend Logic -> Nearest Resource Identification -> DB Update (Assigned).
+3.  **Mobilization:** Resource Client -> State Update -> Navigation Start.
+4.  **On-Scene:** Resource Client -> Activity Logs -> Patient Stabilization.
+5.  **Coordination:** Resource Client -> Hospital Bed Verification -> Transport Start.
+6.  **Handover:** Hospital Panel -> Admission -> Resolution.
+
+#### 7.3 Backend Connectivity Layer
+The connection between the React frontend and Python backend is managed through a persistent `EmergencyContext`.
+*   **Encapsulation:** All API calls are abstracted into asynchronous methods (e.g., `createIncident`, `assignResources`).
+*   **State Hydration:** Initial system state (active incidents, unit positions) is fetched via standard REST `GET` requests upon dashboard initialization.
+*   **Interoperability:** The backend provides a unified JSON-based API that ensures consistency across different actor dashboards.
+
+#### 7.4 Real-time Synchronization Protocol
+Synchronization is achieved via a dedicated WebSocket layer (Socket.io/FastAPI WebSockets):
+*   **Events:**
+    *   `incident:new`: Broadcasted to all responders when a citizen reports an emergency.
+    *   `unit:position`: Emitted by Patrol/Ambulance units every 5-10 seconds; broadcasted to the tracking map.
+    *   `incident:status`: Triggered on status transitions (e.g., DISPATCHED -> ON_SCENE).
+*   **Latency Management:** The system optimizes payloads to minimize bandwidth, transmitting only delta changes for coordinates.
+
+#### 7.5 Technical Data Flow (Step-by-Step)
+1.  **Reporting:** SOS trigger sends GPS coordinates + metadata. Backend validates and stores.
+2.  **Assignment:** The `calculateDistance` (Haversine) logic runs on the server to pair the incident with the single closest 'AVAILABLE' unit.
+3.  **Acknowledgement:** Units receive a "Push" notification through the WebSocket. Accepting the assignment updates their internal state to 'BUSY'.
+4.  **Navigation:** The frontend uses the system's tracking hook (`useGPSTracking`) to frequently ping the backend with updated coordinates.
+5.  **Hospital Alerting:** On transport start, an automated `field_alert` is generated and pushed to the specific Hospital's WebSocket room.
+
+#### 7.6 Failure Mitigation & Edge Cases
+*   **Network Interruption:** Responders utilize a local cache of incident data. Updates are queued and synchronized once connectivity is restored.
+*   **GPS Inaccuracy:** If GPS data is stale (> 30s), the last known position is marked with a "Warning" icon on the map.
+*   **Resource Exhaustion:** If no units are 'AVAILABLE', the incident is queued as 'PENDING' and auto-assigned as soon as a unit resolves a previous case.
 
 ---
 
@@ -178,3 +206,43 @@ sequenceDiagram
 
 #### 8.3 Class Diagram: Data Entities
 (Entities remain consistent; implementation moved from Supabase RLS to Python Server logic).
+
+---
+
+### 9. Detailed Operational Procedures (Step-by-Step)
+
+#### 9.1 Citizen (SOS) Workflow
+1.  **Access:** Open the HERMS Public Portal on a mobile device.
+2.  **Trigger:** Use the "Shake to SOS" gesture or long-press the central SOS button.
+3.  **Data Capture:** The system captures high-accuracy GPS coordinates and activates the microphone/camera (if permitted).
+4.  **Submission:** The user confirms the emergency type (e.g., Accident, Medical).
+5.  **Tracking:** Upon submission, the user is redirected to a "Tracking" screen showing real-time ETA and positions of dispatched resources.
+
+#### 9.2 Patrol Unit Workflow
+1.  **Availability:** Login to the Patrol Dashboard and toggle status to 'AVAILABLE'.
+2.  **Receipt:** Receive an audible and visual "New Assignment" alert.
+3.  **Acceptance:** Review incident location and accept. Status auto-updates to 'EN ROUTE'.
+4.  **Arrival:** Upon reaching coordinates, click "ARRIVED ON SCENE". This notifies the control room and Citizen.
+5.  **Action:** Secure the area and provide initial situational data.
+6.  **Resolution:** Once the scene is clear, click "RESOLVED" to return to an 'AVAILABLE' state.
+
+#### 9.3 Ambulance Unit Workflow
+1.  **Dispatch:** Receive assignment based on proximity to the incident.
+2.  **Navigation:** Use the integrated Leaflet map for navigation to the specific GPS pin.
+3.  **Assessment:** On-scene, the crew enters patient triage data (Critical, Stable, etc.).
+4.  **Hospital Selection:** The system suggests the nearest hospital with available beds. The crew confirms the destination.
+5.  **Transport:** Clicking "START TRANSPORT" triggers a 'Field Alert' at the target hospital.
+6.  **Handoff:** Upon arrival at the ER, the hospital staff confirms admission, marking the ambulance as 'AVAILABLE'.
+
+#### 9.4 Hospital Workflow
+1.  **Monitoring:** Staff monitor the "Hospital Panel" for incoming field alerts.
+2.  **Preparation:** View patient vitals and ETA provided by the incoming ambulance crew.
+3.  **Admission:** When the ambulance arriving, click the "ADMIT" button for the specific incident.
+4.  **Capacity:** The system automatically decrements the 'Available Beds' count.
+5.  **Administration:** Staff can manually toggle "Hospital Full" status to prevent further auto-dispatches.
+
+#### 9.5 Administrator Oversight
+1.  **Global View:** Access the "Admin Dashboard" to see all active incidents across the state.
+2.  **Direct Dispatch:** Manually override auto-dispatch decisions if necessary.
+3.  **Resource Analytics:** Review response times and hospital utilization rates.
+
