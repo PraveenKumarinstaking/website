@@ -118,7 +118,6 @@ Tables: `incidents`, `hospitals`, `ambulances`, `patrols`, `alerts`.
 
 #### 7.1 System Architecture Diagram
 
-```mermaid
 graph TD
     subgraph "External Nodes"
         Citizen["Citizen (Public SOS)"]
